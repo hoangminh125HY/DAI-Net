@@ -115,40 +115,48 @@ min_loss = np.inf
 
 
 def train():
+    # Kiểm tra số lượng GPU có sẵn
     gpu_count = torch.cuda.device_count()
     if gpu_count == 0:
         print("No GPU available. Training on CPU.")
-        per_epoch_size = len(train_dataset) // args.batch_size 
+        per_epoch_size = len(train_dataset) // args.batch_size  # Dùng CPU
     else:
-        per_epoch_size = len(train_dataset) // (args.batch_size * gpu_count)
+        per_epoch_size = len(train_dataset) // (args.batch_size * gpu_count)  # Dùng GPU
+
     start_epoch = 0
     iteration = 0
     step_index = 0
 
+    # Khởi tạo mô hình
     basenet = basenet_factory(args.model)
     dsfd_net = build_net('train', cfg.NUM_CLASSES, args.model)
     net = dsfd_net
     net_enh = RetinexNet()
-    net_enh.load_state_dict(torch.load(args.save_folder + 'decomp.pth'))
+    model_path = os.path.join(args.save_folder, 'decomp.pth')
 
+    # Kiểm tra sự tồn tại của tệp decomp.pth
+    if os.path.exists(model_path):
+        net_enh.load_state_dict(torch.load(model_path))
+    else:
+        print(f"Warning: {model_path} not found. Initializing model from scratch.")
+        net_enh.apply(net_enh.weights_init)
+
+    # Tiến hành huấn luyện nếu có checkpoint
     if args.resume:
-        if local_rank == 0:
-            print('Resuming training, loading {}...'.format(args.resume))
+        print(f'Resuming training, loading {args.resume}...')
         start_epoch = net.load_weights(args.resume)
         iteration = start_epoch * per_epoch_size
     else:
         base_weights = torch.load(args.save_folder + basenet)
-        if local_rank == 0:
-            print('Load base network {}'.format(args.save_folder + basenet))
+        print(f'Load base network {args.save_folder + basenet}')
         if args.model == 'vgg' or args.model == 'dark':
             net.vgg.load_state_dict(base_weights)
         else:
             net.resnet.load_state_dict(base_weights)
 
-
+    # Khởi tạo weights nếu không có checkpoint
     if not args.resume:
-        if local_rank == 0:
-            print('Initializing weights...')
+        print('Initializing weights...')
         net.extras.apply(net.weights_init)
         net.fpn_topdown.apply(net.weights_init)
         net.fpn_latlayer.apply(net.weights_init)
@@ -159,59 +167,29 @@ def train():
         net.conf_pal2.apply(net.weights_init)
         net.ref.apply(net.weights_init)
 
-    # Scaling the lr
-    lr = args.lr * np.round(np.sqrt(args.batch_size / 4 * torch.cuda.device_count()),4)
-    param_group = []
-    param_group += [{'params': dsfd_net.vgg.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.extras.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.fpn_topdown.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.fpn_latlayer.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.fpn_fem.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.loc_pal1.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.conf_pal1.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.loc_pal2.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.conf_pal2.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.ref.parameters(), 'lr': lr / 10.}]
+    # Scaling the learning rate
+    lr = args.lr * np.round(np.sqrt(args.batch_size / 4 * gpu_count), 4)
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
 
-    optimizer = optim.SGD(param_group, lr=lr, momentum=args.momentum,
-                          weight_decay=args.weight_decay)
-
-    if args.cuda:
-        if args.multigpu:
-            net = torch.nn.parallel.DistributedDataParallel(net.cuda(), find_unused_parameters=True)
-            net_enh = torch.nn.parallel.DistributedDataParallel(net_enh.cuda())
-        # net = net.cuda()
-        cudnn.benckmark = True
+    if args.cuda and gpu_count > 0:
+        net = net.cuda()  # Chuyển mô hình lên GPU nếu có GPU
 
     criterion = MultiBoxLoss(cfg, args.cuda)
     criterion_enhance = EnhanceLoss()
-    if local_rank == 0:
-        print('Loading wider dataset...')
-        print('Using the specified args:')
-        print(args)
 
-    for step in cfg.LR_STEPS:
-        if iteration > step:
-            step_index += 1
-            adjust_learning_rate(optimizer, args.gamma, step_index)
-    net_enh.eval()
-    net.train()
-    corr_mat = None
     for epoch in range(start_epoch, cfg.EPOCHES):
         losses = 0
+        net.train()
 
         for batch_idx, (images, targets, _) in enumerate(train_loader):
-            images = Variable(images.cuda() / 255.)
-            targetss = [Variable(ann.cuda(), requires_grad=False)
-                        for ann in targets]
-            img_dark = torch.empty(size=(images.shape[0], images.shape[1], images.shape[2], images.shape[3])).cuda()
-            # Generation of degraded data and AET groundtruth
+            images = Variable(images.cuda() / 255.) if args.cuda else Variable(images / 255.)
+            targetss = [Variable(ann.cuda(), requires_grad=False) for ann in targets] if args.cuda else [Variable(ann, requires_grad=False) for ann in targets]
+
+            # Tạo ảnh bị giảm sáng (degraded)
+            img_dark = torch.empty(size=(images.shape[0], images.shape[1], images.shape[2], images.shape[3])).cuda() if args.cuda else torch.empty(size=(images.shape[0], images.shape[1], images.shape[2], images.shape[3]))
+
             for i in range(images.shape[0]):
                 img_dark[i], _ = Low_Illumination_Degrading(images[i])
-
-            if iteration in cfg.LR_STEPS:
-                step_index += 1
-                adjust_learning_rate(optimizer, args.gamma, step_index)
 
             t0 = time.time()
             R_dark_gt, I_dark = net_enh(img_dark)
@@ -220,7 +198,6 @@ def train():
             out, out2, loss_mutual = net(img_dark, images, I_dark.detach(), I_light.detach())
             R_dark, R_light, R_dark_2, R_light_2 = out2
 
-            # backprop
             optimizer.zero_grad()
 
             loss_l_pa1l, loss_c_pal1 = criterion(out[:3], targetss)
@@ -234,93 +211,51 @@ def train():
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=35, norm_type=2)
             optimizer.step()
+
             t1 = time.time()
             losses += loss.item()
 
             if iteration % 100 == 0:
                 tloss = losses / (batch_idx + 1)
-                if local_rank == 0:
-                    print('Timer: %.4f' % (t1 - t0))
-                    print('epoch:' + repr(epoch) + ' || iter:' +
-                          repr(iteration) + ' || Loss:%.4f' % (tloss))
-                    print('->> pal1 conf loss:{:.4f} || pal1 loc loss:{:.4f}'.format(
-                        loss_c_pal1.item(), loss_l_pa1l.item()))
-                    print('->> pal2 conf loss:{:.4f} || pal2 loc loss:{:.4f}'.format(
-                        loss_c_pal2.item(), loss_l_pa12.item()))
-                    print('->>lr:{}'.format(optimizer.param_groups[0]['lr']))
+                print(f"Timer: {t1 - t0:.4f}")
+                print(f"epoch:{epoch} || iter:{iteration} || Loss:{tloss:.4f}")
+                print(f"->> pal1 conf loss:{loss_c_pal1.item():.4f} || pal1 loc loss:{loss_l_pa1l.item():.4f}")
+                print(f"->> pal2 conf loss:{loss_c_pal2.item():.4f} || pal2 loc loss:{loss_l_pa12.item():.4f}")
+                print(f"->>lr:{optimizer.param_groups[0]['lr']}")
 
-            if iteration != 0 and iteration % 5000 == 0:
-                if local_rank == 0:
-                    print('Saving state, iter:', iteration)
-                    file = 'dsfd_' + repr(iteration) + '.pth'
-                    torch.save(dsfd_net.state_dict(),
-                               os.path.join(save_folder, file))
+            if iteration % 5000 == 0:
+                print(f'Saving state, iter: {iteration}')
+                torch.save(net.state_dict(), os.path.join(save_folder, f'dsfd_{iteration}.pth'))
+
             iteration += 1
-        # if local_rank == 0:
-        if (epoch + 1) >= 0:
-            val(epoch, net, dsfd_net, net_enh, criterion)
+
+        if epoch >= 0:
+            val(epoch, net, criterion)
+
         if iteration >= cfg.MAX_STEPS:
             break
 
 
-def val(epoch, net, dsfd_net, net_enh, criterion):
+def val(epoch, net, criterion):
     net.eval()
-    step = 0
-    losses = torch.tensor(0.).cuda()
-    losses_enh = torch.tensor(0.).cuda()
+    losses = 0
     t1 = time.time()
 
     for batch_idx, (images, targets, img_paths) in enumerate(val_loader):
-        if args.cuda:
-            images = Variable(images.cuda() / 255.)
-            targets = [Variable(ann.cuda(), volatile=True)
-                       for ann in targets]
-        else:
-            images = Variable(images / 255.)
-            targets = [Variable(ann, volatile=True) for ann in targets]
-        img_dark = torch.stack([Low_Illumination_Degrading(images[i])[0] for i in range(images.shape[0])],
-                               dim=0)
-        out, R = net.module.test_forward(img_dark)
+        images = Variable(images.cuda() / 255.) if args.cuda else Variable(images / 255.)
+        targets = [Variable(ann.cuda(), volatile=True) for ann in targets] if args.cuda else [Variable(ann, volatile=True) for ann in targets]
+
+        img_dark = torch.stack([Low_Illumination_Degrading(images[i])[0] for i in range(images.shape[0])], dim=0)
+
+        out, R = net(img_dark)
 
         loss_l_pa1l, loss_c_pal1 = criterion(out[:3], targets)
         loss_l_pa12, loss_c_pal2 = criterion(out[3:], targets)
         loss = loss_l_pa12 + loss_c_pal2
 
         losses += loss.item()
-        step += 1
-    dist.reduce(losses, 0, op=dist.ReduceOp.SUM)
 
-    tloss = losses / step / torch.cuda.device_count()
-    t2 = time.time()
-    if local_rank == 0:
-        print('Timer: %.4f' % (t2 - t1))
-        print('test epoch:' + repr(epoch) + ' || Loss:%.4f' % (tloss))
-
-    global min_loss
-    if tloss < min_loss:
-        if local_rank == 0:
-            print('Saving best state,epoch', epoch)
-            torch.save(dsfd_net.state_dict(), os.path.join(
-                save_folder, 'dsfd.pth'))
-        min_loss = tloss
-
-    states = {
-        'epoch': epoch,
-        'weight': dsfd_net.state_dict(),
-    }
-    if local_rank == 0:
-        torch.save(states, os.path.join(save_folder, 'dsfd_checkpoint.pth'))
-
-
-def adjust_learning_rate(optimizer, gamma, step):
-    """Sets the learning rate to the initial LR decayed by 10 at every
-        specified step
-    # Adapted from PyTorch Imagenet example:
-    # https://github.com/pytorch/examples/blob/master/imagenet/main.py
-    """
-    # lr = args.lr * args.batch_size / 4 * torch.cuda.device_count() * (gamma ** (step))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = param_group['lr'] * gamma
+    print(f'Validation Loss after epoch {epoch}: {losses / len(val_loader)}')
 
 
 if __name__ == '__main__':
