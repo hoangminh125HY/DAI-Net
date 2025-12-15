@@ -3,7 +3,7 @@
 from __future__ import division
 from __future__ import absolute_import
 from __future__ import print_function
-
+from torch.utils.data import DataLoader
 import os
 import random
 import time
@@ -98,22 +98,18 @@ if not os.path.exists(save_folder):
 
 
 train_dataset = WIDERDetection('/kaggle/input/data-2017/dts_2017/my_night/annotations/train2017.json', mode='train')
-
 val_dataset = WIDERDetection('/kaggle/input/data-2017/dts_2017/my_night/annotations/val2017.json', mode='val')
-train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True)
-train_loader = data.DataLoader(train_dataset, args.batch_size,
-                               num_workers=args.num_workers,
-                               collate_fn=detection_collate,
-                               sampler=train_sampler,
-                               pin_memory=True)
-val_batchsize = args.batch_size
-val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset, shuffle=True)
-val_loader = data.DataLoader(val_dataset, val_batchsize,
-                             num_workers=0,
-                             collate_fn=detection_collate,
-                             sampler=val_sampler,
-                             pin_memory=True)
 
+# Sử dụng DataLoader bình thường
+train_loader = DataLoader(train_dataset, args.batch_size, 
+                          num_workers=args.num_workers, 
+                          collate_fn=detection_collate, 
+                          pin_memory=True)
+
+val_loader = DataLoader(val_dataset, args.batch_size, 
+                        num_workers=0, 
+                        collate_fn=detection_collate, 
+                        pin_memory=True)
 
 min_loss = np.inf
 
