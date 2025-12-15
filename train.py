@@ -97,9 +97,9 @@ if not os.path.exists(save_folder):
     os.makedirs(save_folder, exist_ok=True)
 
 
-train_dataset = WIDERDetection(cfg.FACE.TRAIN_FILE, mode='train')
+train_dataset = WIDERDetection('/kaggle/input/data-2017/dts_2017/my_night/annotations/train2017.json', mode='train')
 
-val_dataset = WIDERDetection(cfg.FACE.VAL_FILE, mode='val')
+val_dataset = WIDERDetection('/kaggle/input/data-2017/dts_2017/my_night/annotations/val2017.json', mode='val')
 train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, shuffle=True)
 train_loader = data.DataLoader(train_dataset, args.batch_size,
                                num_workers=args.num_workers,
