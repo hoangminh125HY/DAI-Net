@@ -115,7 +115,12 @@ min_loss = np.inf
 
 
 def train():
-    per_epoch_size = len(train_dataset) // (args.batch_size * torch.cuda.device_count())
+    gpu_count = torch.cuda.device_count()
+    if gpu_count == 0:
+        print("No GPU available. Training on CPU.")
+        per_epoch_size = len(train_dataset) // args.batch_size 
+    else:
+        per_epoch_size = len(train_dataset) // (args.batch_size * gpu_count)
     start_epoch = 0
     iteration = 0
     step_index = 0
