@@ -1,16 +1,9 @@
-#-*- coding:utf-8 -*-
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
+import json
 import torch
-from PIL import Image, ImageDraw
 import torch.utils.data as data
 import numpy as np
-import random
+from PIL import Image
 from utils.augmentations import preprocess
-
 
 class WIDERDetection(data.Dataset):
     """docstring for WIDERDetection"""
@@ -18,33 +11,32 @@ class WIDERDetection(data.Dataset):
     def __init__(self, list_file, mode='train'):
         super(WIDERDetection, self).__init__()
         self.mode = mode
-        self.fnames = []
-        self.boxes = []
-        self.labels = []
+        self.fnames = []  # Danh sách ảnh
+        self.boxes = []   # Danh sách bounding boxes
+        self.labels = []  # Danh sách labels
 
+        # Đọc tệp JSON
         with open(list_file) as f:
-            lines = f.readlines()
+            data = json.load(f)
 
-        for line in lines:
-            line = line.strip().split()
-            if len(line) < 2:
-                print(f"Skipping invalid line: {line}")  # In ra dòng bị lỗi
-                continue  # Bỏ qua dòng không hợp lệ
-            num_faces = int(line[1])
+        # Đọc thông tin ảnh từ tệp JSON
+        for image_info in data['images']:
+            image_path = image_info['file_name']
+            num_faces = len(data['annotations'])  # Đếm số lượng annotations cho ảnh này
+
             box = []
             label = []
-            for i in range(num_faces):
-                x = float(line[2 + 5 * i])
-                y = float(line[3 + 5 * i])
-                w = float(line[4 + 5 * i])
-                h = float(line[5 + 5 * i])
-                c = int(line[6 + 5 * i])
-                if w <= 0 or h <= 0:
-                    continue
-                box.append([x, y, x + w, y + h])
-                label.append(c)
+            for annotation in data['annotations']:
+                if annotation['image_id'] == image_info['id']:
+                    x, y, w, h = annotation['bbox']
+                    c = annotation['category_id']
+                    if w <= 0 or h <= 0:
+                        continue
+                    box.append([x, y, x + w, y + h])
+                    label.append(c)
+
             if len(box) > 0:
-                self.fnames.append(line[0])
+                self.fnames.append(image_path)
                 self.boxes.append(box)
                 self.labels.append(label)
 
@@ -82,17 +74,6 @@ class WIDERDetection(data.Dataset):
             else:
                 index = random.randrange(0, self.num_samples)
 
-        
-        #img = Image.fromarray(img)
-        '''
-        draw = ImageDraw.Draw(img)
-        w,h = img.size
-        for bbox in sample_labels:
-            bbox = (bbox[1:] * np.array([w, h, w, h])).tolist()
-
-            draw.rectangle(bbox,outline='red')
-        img.save('image.jpg')
-        '''
         return torch.from_numpy(img), target, image_path, im_height, im_width
         
 
@@ -102,33 +83,3 @@ class WIDERDetection(data.Dataset):
         boxes[:, 2] /= im_width
         boxes[:, 3] /= im_height
         return boxes
-
-
-def detection_collate(batch):
-    """Custom collate fn for dealing with batches of images that have a different
-    number of associated object annotations (bounding boxes).
-
-    Arguments:
-        batch: (tuple) A tuple of tensor images and lists of annotations
-
-    Return:
-        A tuple containing:
-            1) (tensor) batch of images stacked on their 0 dim
-            2) (list of tensors) annotations for a given image are stacked on
-                                 0 dim
-    """
-    targets = []
-    imgs = []
-    paths = []
-    for sample in batch:
-        imgs.append(sample[0])
-        targets.append(torch.FloatTensor(sample[1]))
-        paths.append(sample[2])
-    return torch.stack(imgs, 0), targets, paths
-
-
-if __name__ == '__main__':
-    from config import cfg
-    dataset = WIDERDetection(cfg.FACE.TRAIN_FILE)
-    #for i in range(len(dataset)):
-    dataset.pull_item(14)
