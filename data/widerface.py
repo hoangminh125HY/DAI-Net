@@ -1,9 +1,11 @@
 import json
 import torch
+from PIL import Image
 import torch.utils.data as data
 import numpy as np
-from PIL import Image
+import random
 from utils.augmentations import preprocess
+
 
 class WIDERDetection(data.Dataset):
     """docstring for WIDERDetection"""
@@ -19,7 +21,7 @@ class WIDERDetection(data.Dataset):
         with open(list_file) as f:
             data = json.load(f)
 
-        # Đọc thông tin ảnh từ tệp JSON
+        # Lặp qua các ảnh trong tệp JSON
         for image_info in data['images']:
             image_path = image_info['file_name']
             num_faces = len(data['annotations'])  # Đếm số lượng annotations cho ảnh này
@@ -83,3 +85,32 @@ class WIDERDetection(data.Dataset):
         boxes[:, 2] /= im_width
         boxes[:, 3] /= im_height
         return boxes
+
+
+def detection_collate(batch):
+    """Custom collate fn for dealing with batches of images that have a different
+    number of associated object annotations (bounding boxes).
+
+    Arguments:
+        batch: (tuple) A tuple of tensor images and lists of annotations
+
+    Return:
+        A tuple containing:
+            1) (tensor) batch of images stacked on their 0 dim
+            2) (list of tensors) annotations for a given image are stacked on
+                                 0 dim
+    """
+    targets = []
+    imgs = []
+    paths = []
+    for sample in batch:
+        imgs.append(sample[0])
+        targets.append(torch.FloatTensor(sample[1]))
+        paths.append(sample[2])
+    return torch.stack(imgs, 0), targets, paths
+
+
+if __name__ == '__main__':
+    from config import cfg
+    dataset = WIDERDetection(cfg.FACE.TRAIN_FILE)  # Đảm bảo đường dẫn tệp JSON chính xác
+    dataset.pull_item(14)
