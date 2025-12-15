@@ -94,7 +94,8 @@ else:
 
 save_folder = os.path.join(args.save_folder, args.model)
 if not os.path.exists(save_folder):
-    os.mkdir(save_folder)
+    os.makedirs(save_folder, exist_ok=True)
+
 
 train_dataset = WIDERDetection(cfg.FACE.TRAIN_FILE, mode='train')
 
