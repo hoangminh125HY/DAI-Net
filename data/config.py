@@ -68,8 +68,8 @@ _C.WEIGHT.MC = 0.1
 
 # face config
 _C.FACE = EasyDict()
-_C.FACE.TRAIN_FILE = './dataset/wider_face_train.txt'
-_C.FACE.VAL_FILE = './dataset/wider_face_val.txt'
+_C.FACE.TRAIN_FILE = '/kaggle/input/data-2017/dts_2017/my_night/annotations/train2017.json'
+_C.FACE.VAL_FILE = '/kaggle/input/data-2017/dts_2017/my_night/annotations/val2017.json'
 
 _C.FACE.OVERLAP_THRESH = 0.35
 
