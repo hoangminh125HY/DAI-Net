@@ -27,6 +27,9 @@ class WIDERDetection(data.Dataset):
 
         for line in lines:
             line = line.strip().split()
+            if len(line) < 2:
+                print(f"Skipping invalid line: {line}")  # In ra dòng bị lỗi
+                continue  # Bỏ qua dòng không hợp lệ
             num_faces = int(line[1])
             box = []
             label = []
