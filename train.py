@@ -163,7 +163,7 @@ def train():
         net.conf_pal1.apply(net.weights_init)
         net.loc_pal2.apply(net.weights_init)
         net.conf_pal2.apply(net.weights_init)
-        net.ref.apply(net.weights_init)
+        #net.ref.apply(net.weights_init)
 
     # Scaling the lr
     lr = args.lr * np.round(np.sqrt(args.batch_size / 4 * torch.cuda.device_count()),4)
