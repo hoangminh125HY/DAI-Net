@@ -177,7 +177,7 @@ def train():
     param_group += [{'params': dsfd_net.conf_pal1.parameters(), 'lr': lr}]
     param_group += [{'params': dsfd_net.loc_pal2.parameters(), 'lr': lr}]
     param_group += [{'params': dsfd_net.conf_pal2.parameters(), 'lr': lr}]
-    param_group += [{'params': dsfd_net.ref.parameters(), 'lr': lr / 10.}]
+    #param_group += [{'params': dsfd_net.ref.parameters(), 'lr': lr / 10.}]
 
     optimizer = optim.SGD(param_group, lr=lr, momentum=args.momentum,
                           weight_decay=args.weight_decay)
