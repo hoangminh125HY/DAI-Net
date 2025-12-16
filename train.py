@@ -118,6 +118,7 @@ min_loss = np.inf
 
 
 def train():
+    local_rank = args.local_rank if 'local_rank' in args else 0
     gpu_count = torch.cuda.device_count()
     if gpu_count == 0:
         print("No GPU available. Training on CPU.")
