@@ -67,31 +67,34 @@ parser.add_argument('--local_rank',
                     type=int,
                     help='local rank for dist')
 
-args = parser.parse_args()
-global local_rank
-local_rank = args.local_rank
-
 if 'LOCAL_RANK' not in os.environ:
     os.environ['LOCAL_RANK'] = str(args.local_rank)
 
+# Kiểm tra số lượng GPU có sẵn
 if torch.cuda.is_available():
     if args.cuda:
-        # torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
         gpu_num = torch.cuda.device_count()
-        if local_rank == 0:
-            print('Using {} gpus'.format(gpu_num))
-        torch.cuda.set_device(rank % gpu_num)
-    if not args.cuda:
-        print("WARNING: It looks like you have a CUDA device, but aren't " +
-              "using CUDA.\nRun with --cuda for optimal training speed.")
-        torch.set_default_tensor_type('torch.FloatTensor')
+        if gpu_num > 0:
+            print(f"Using {gpu_num} GPU(s) for training.")
+            # Chọn GPU đầu tiên (hoặc GPU theo chỉ số rank nếu sử dụng phân tán)
+            torch.cuda.set_device(0)  # Chỉ sử dụng 1 GPU trong trường hợp này
+        else:
+            print("No GPU available. Training on CPU.")
+            torch.set_default_tensor_type('torch.FloatTensor')  # Sử dụng CPU khi không có GPU
+    else:
+        print("WARNING: CUDA is available but not being used. Training on CPU.")
+        torch.set_default_tensor_type('torch.FloatTensor')  # Dùng CPU
 else:
-    torch.set_default_tensor_type('torch.FloatTensor')
+    print("No CUDA device found. Training on CPU.")
+    torch.set_default_tensor_type('torch.FloatTensor')  # Dùng CPU khi không có GPU
 
+# Xử lý thư mục lưu mô hình
 save_folder = os.path.join(args.save_folder, args.model)
 if not os.path.exists(save_folder):
     os.makedirs(save_folder, exist_ok=True)
+
+# Kiểm tra lưu trữ mô hình và huấn luyện ở đây (thêm mã huấn luyện của bạn)
+print(f"Save folder for models: {save_folder}")
 
 
 train_dataset = WIDERDetection('/kaggle/input/data-2017/dts_2017/my_night/annotations/train2017.json', mode='train')
