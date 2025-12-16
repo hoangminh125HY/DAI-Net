@@ -132,15 +132,17 @@ def train():
     dsfd_net = build_net('train', cfg.NUM_CLASSES, args.model)
     net = dsfd_net
     net_enh = RetinexNet()
-    net_enh.load_state_dict(torch.load('/kaggle/input/weights/decomp.pth'))
+    net_enh.load_state_dict(torch.load('/kaggle/input/weights1/weights/decomp.pth'))
+    vgg_weights_path = '/kaggle/input/weights1/weights/vgg16_reducedfc.pth'  # Cập nhật đường dẫn đúng
 
+# Thay vì tải từ args.save_folder + basenet, bạn tải trực tiếp từ đường dẫn đã chỉ định
     if args.resume:
         if local_rank == 0:
             print('Resuming training, loading {}...'.format(args.resume))
         start_epoch = net.load_weights(args.resume)
         iteration = start_epoch * per_epoch_size
     else:
-        base_weights = torch.load(args.save_folder + basenet)
+        base_weights = torch.load(vgg_weights_path)
         if local_rank == 0:
             print('Load base network {}'.format(args.save_folder + basenet))
         if args.model == 'vgg' or args.model == 'dark':
