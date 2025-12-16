@@ -77,14 +77,11 @@ if 'LOCAL_RANK' not in os.environ:
 if torch.cuda.is_available():
     if args.cuda:
         # torch.set_default_tensor_type('torch.cuda.FloatTensor')
-        import torch.distributed as dist
 
         gpu_num = torch.cuda.device_count()
         if local_rank == 0:
             print('Using {} gpus'.format(gpu_num))
-        rank = int(os.environ['RANK'])
         torch.cuda.set_device(rank % gpu_num)
-        dist.init_process_group('nccl')
     if not args.cuda:
         print("WARNING: It looks like you have a CUDA device, but aren't " +
               "using CUDA.\nRun with --cuda for optimal training speed.")
