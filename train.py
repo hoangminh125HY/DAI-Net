@@ -132,7 +132,7 @@ def train():
     dsfd_net = build_net('train', cfg.NUM_CLASSES, args.model)
     net = dsfd_net
     net_enh = RetinexNet()
-    net_enh.load_state_dict(torch.load(args.save_folder + 'decomp.pth'))
+    net_enh.load_state_dict(torch.load('/kaggle/input/weights/decomp.pth'))
 
     if args.resume:
         if local_rank == 0:
